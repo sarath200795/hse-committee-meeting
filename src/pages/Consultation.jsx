@@ -220,16 +220,19 @@ export default function Consultation() {
 
     // Live org data: sites, approved users and consultation records.
     useEffect(() => {
-        if (!orgId) return undefined;
-        const unsubSites = subscribeSites(orgId, (list) => setSites(list));
-        const unsubUsers = subscribeOrgUsers(orgId, (list) =>
-            setUsers(list.filter(u => u.status === 'approved').map(u => ({ id: u.uid, ...u })))
-        );
-        const unsubMeetings = subscribeConsultations(orgId, (list) => {
-            setMeetings([...list].sort((a, b) => new Date(b.date) - new Date(a.date)));
-            setIsLoading(false);
-        });
-        return () => { unsubSites(); unsubUsers(); unsubMeetings(); };
+        if (!orgId) { setIsLoading(false); return undefined; }
+        const done = () => setIsLoading(false);
+        // Never get stuck on the loader — always show the dashboard once auth is ready,
+        // even if a listener is slow or a read is denied (it just renders empty then).
+        const safety = setTimeout(done, 5000);
+        const unsubSites = subscribeSites(orgId, (list) => setSites(list), () => {});
+        const unsubUsers = subscribeOrgUsers(orgId,
+            (list) => setUsers(list.filter(u => u.status === 'approved').map(u => ({ id: u.uid, ...u }))),
+            () => {});
+        const unsubMeetings = subscribeConsultations(orgId,
+            (list) => { setMeetings([...list].sort((a, b) => new Date(b.date) - new Date(a.date))); done(); },
+            () => done());
+        return () => { clearTimeout(safety); unsubSites(); unsubUsers(); unsubMeetings(); };
     }, [orgId]);
 
     // ==========================================

@@ -128,9 +128,12 @@ export async function getUserProfile(uid) {
   return snap.exists() ? { uid, ...snap.data() } : null
 }
 
-export function subscribeOrgUsers(orgId, cb) {
+export function subscribeOrgUsers(orgId, cb, onError) {
   const q = query(collection(db, 'users'), where('orgId', '==', orgId))
-  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ uid: d.id, ...d.data() }))))
+  return onSnapshot(q,
+    (snap) => cb(snap.docs.map((d) => ({ uid: d.id, ...d.data() }))),
+    (err) => { console.warn('[HSE] users read failed:', err?.message || err); onError?.(err) },
+  )
 }
 
 /** Live org document. */
@@ -154,9 +157,10 @@ export async function setUserRole(uid, role) {
 // ── Sites (organizations/{orgId}/sites) ────────────────────────────────────────
 // Facility sites the committee meetings are scoped/filtered by. { code, name }.
 
-export function subscribeSites(orgId, cb) {
-  return onSnapshot(siteCol(orgId), (snap) =>
-    cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+export function subscribeSites(orgId, cb, onError) {
+  return onSnapshot(siteCol(orgId),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    (err) => { console.warn('[HSE] sites read failed:', err?.message || err); onError?.(err) },
   )
 }
 
@@ -184,9 +188,10 @@ export async function deleteSite(orgId, id) {
 
 // ── Consultations / meetings (organizations/{orgId}/consultations) ──────────────
 
-export function subscribeConsultations(orgId, cb) {
-  return onSnapshot(consultationCol(orgId), (snap) =>
-    cb(snap.docs.map((d) => ({ firebaseKey: d.id, ...d.data() }))),
+export function subscribeConsultations(orgId, cb, onError) {
+  return onSnapshot(consultationCol(orgId),
+    (snap) => cb(snap.docs.map((d) => ({ firebaseKey: d.id, ...d.data() }))),
+    (err) => { console.warn('[HSE] consultations read failed:', err?.message || err); onError?.(err) },
   )
 }
 
