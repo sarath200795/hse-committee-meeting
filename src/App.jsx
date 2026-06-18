@@ -1,6 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { AnimatePresence } from 'framer-motion'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './components/ProtectedRoute'
 import Layout from './components/Layout'
 import { FullScreenLoader } from './components/ui'
@@ -20,33 +19,30 @@ const Users = lazy(() => import('./pages/Users'))
 const ManageSites = lazy(() => import('./pages/ManageSites'))
 
 export default function App() {
-  const location = useLocation()
   if (!isFirebaseConfigured) return <SetupNeeded />
   return (
     <Suspense fallback={<FullScreenLoader label="Loading…" />}>
-      <AnimatePresence mode="wait">
-        <Routes location={location} key={location.pathname}>
-          <Route path="/" element={<Navigate to="/app/meetings" replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/register-org" element={<RegisterOrg />} />
-          <Route path="/pending" element={<PendingApproval />} />
-          <Route path="/privacy" element={<Legal kind="privacy" />} />
-          <Route path="/terms" element={<Legal kind="terms" />} />
-          <Route path="/data-retention" element={<Legal kind="retention" />} />
-          <Route path="/cookies" element={<Legal kind="cookies" />} />
+      <Routes>
+        <Route path="/" element={<Navigate to="/app/meetings" replace />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/register-org" element={<RegisterOrg />} />
+        <Route path="/pending" element={<PendingApproval />} />
+        <Route path="/privacy" element={<Legal kind="privacy" />} />
+        <Route path="/terms" element={<Legal kind="terms" />} />
+        <Route path="/data-retention" element={<Legal kind="retention" />} />
+        <Route path="/cookies" element={<Legal kind="cookies" />} />
 
-          <Route path="/app" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route index element={<Navigate to="/app/meetings" replace />} />
-            <Route path="meetings" element={<Consultation />} />
-            <Route path="users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
-            <Route path="sites" element={<ProtectedRoute adminOnly><ManageSites /></ProtectedRoute>} />
-          </Route>
+        <Route path="/app" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+          <Route index element={<Navigate to="/app/meetings" replace />} />
+          <Route path="meetings" element={<Consultation />} />
+          <Route path="users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
+          <Route path="sites" element={<ProtectedRoute adminOnly><ManageSites /></ProtectedRoute>} />
+        </Route>
 
-          <Route path="*" element={<Navigate to="/app/meetings" replace />} />
-        </Routes>
-      </AnimatePresence>
+        <Route path="*" element={<Navigate to="/app/meetings" replace />} />
+      </Routes>
     </Suspense>
   )
 }
