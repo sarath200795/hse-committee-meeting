@@ -9,6 +9,7 @@ import SetupNeeded from './pages/SetupNeeded'
 
 // Route-level code splitting — each page is fetched only when navigated to.
 const Login = lazy(() => import('./pages/Login'))
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
 const Signup = lazy(() => import('./pages/Signup'))
 const RegisterOrg = lazy(() => import('./pages/RegisterOrg'))
 const PendingApproval = lazy(() => import('./pages/PendingApproval'))
@@ -27,6 +28,7 @@ export default function App() {
         <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Navigate to="/app/meetings" replace />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/register-org" element={<RegisterOrg />} />
           <Route path="/pending" element={<PendingApproval />} />
