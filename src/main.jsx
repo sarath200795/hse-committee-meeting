@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast'
 import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import '@fortawesome/fontawesome-free/css/all.min.css'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
