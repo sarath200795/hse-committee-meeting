@@ -338,6 +338,9 @@ export default function Assistant() {
   }
 
   const shownMode = asking ? 'think' : open ? 'wave' : asleep ? 'sleep' : mode
+  // Lightweight 2D Sam — used directly, and as the fallback for the 3D avatar
+  // (e.g. when no rigged .glb model is present, so we never start a WebGL canvas).
+  const svgSam = <div style={{ transform: `scaleX(${facing})` }}><Character mode={shownMode} reduced={reduced} /></div>
 
   return (
     <div className="no-print">
@@ -357,9 +360,9 @@ export default function Assistant() {
               <Character mode={shownMode} reduced />
             </div>
           ) : (
-            <AvatarBoundary fallback={<div style={{ transform: `scaleX(${facing})` }}><Character mode={shownMode} reduced={reduced} /></div>}>
-              <Suspense fallback={<div style={{ transform: `scaleX(${facing})` }}><Character mode={shownMode} reduced={reduced} /></div>}>
-                <Character3D mode={shownMode} size={68} facing={facing} />
+            <AvatarBoundary fallback={svgSam}>
+              <Suspense fallback={svgSam}>
+                <Character3D mode={shownMode} size={68} facing={facing} fallback={svgSam} />
               </Suspense>
             </AvatarBoundary>
           )}
