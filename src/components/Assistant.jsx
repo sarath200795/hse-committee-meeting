@@ -25,6 +25,18 @@ const ls = {
 const loop = (d) => ({ duration: d, repeat: Infinity, ease: 'easeInOut' })
 const IDLE_SLEEP_MS = 3 * 60 * 1000
 
+// First-run guided tour — Sam walks to each anchor and explains it. Steps whose
+// target isn't on screen (wrong breakpoint, non-admin, etc.) are skipped.
+const TOUR_STEPS = [
+  { sel: '[data-tour="menu"]', title: 'Navigation menu', text: 'Tap here to open the menu and move between sections.' },
+  { sel: '[data-tour="nav-dashboard"]', title: 'Your dashboard', text: 'Get an at-a-glance overview of meetings, actions and compliance.' },
+  { sel: '[data-tour="nav-calendar"]', title: 'Calendar', text: 'Browse and plan your meetings by date.' },
+  { sel: '[data-tour="nav-new"]', title: 'Log a meeting', text: 'Record a new HSE committee or consultation meeting here.' },
+  { sel: '[data-tour="nav-users"]', title: 'Team & approvals', text: 'Admins approve teammates and manage roles here.' },
+  { sel: '[data-tour="nav-sites"]', title: 'Facility sites', text: 'Manage the sites your meetings belong to.' },
+  { sel: '[data-tour="sam"]', title: 'That’s me — Sam!', text: 'Tap me anytime for tips or to ask about your data. You can drag me anywhere, too.' },
+]
+
 const SKIN = '#e8b48f', SKIN_D = '#c98b62', HAT = '#f4b400', HAT_D = '#c98a00'
 const VEST = '#2563eb', VEST_D = '#1e40af', STRIPE = '#fde047', TROUSER = '#1e3a8a', SHOE = '#0b1220'
 
@@ -197,6 +209,9 @@ export default function Assistant() {
   const [facing, setFacing] = useState(-1)
   const [asleep, setAsleep] = useState(false)
   const [pinned, setPinned] = useState(() => ls.get(`hse:guide:pinned:${uid}`) === '1')
+  const [tour, setTour] = useState(null)   // { steps, i } while the first-run tour runs
+  const [spot, setSpot] = useState(null)   // highlighted element rect for the current step
+  const tourKey = `hse:guide:tour:${uid}`
 
   const savedPos = useMemo(() => { try { return JSON.parse(ls.get(`hse:guide:pos:${uid}`) || 'null') } catch { return null } }, [uid])
   const mx = useMotionValue(savedPos?.x ?? 80)
@@ -224,6 +239,7 @@ export default function Assistant() {
   // Movement / pose state machine.
   useEffect(() => {
     if (!enabled) return undefined
+    if (tour) return undefined // the tour drives Sam's movement
     if (asleep) { setMode('sleep'); return undefined }
     if (open || tip) {
       if (!pinned) { setFacing(-1); animate(mx, homeX(), { duration: 0.7, ease: 'linear' }); animate(my, 0, { duration: 0.4 }) }
@@ -258,11 +274,70 @@ export default function Assistant() {
     }
     t = setTimeout(step, 1400)
     return () => { alive = false; clearTimeout(t); if (anim?.stop) anim.stop() }
-  }, [enabled, asleep, open, tip, writingPage, reduced, pinned, mx, my])
+  }, [enabled, tour, asleep, open, tip, writingPage, reduced, pinned, mx, my])
+
+  // ── First-run guided tour ───────────────────────────────────────────────────
+  const visibleEl = (sel) => Array.from(document.querySelectorAll(sel)).find((el) => el.offsetParent !== null) || null
+
+  const endTour = () => {
+    ls.set(tourKey, '1')
+    try { sessionStorage.setItem(`hse:guide:greeted:${uid}`, '1') } catch { /* ignore */ }
+    setTour(null); setSpot(null); setMode('idle')
+  }
+  const nextStep = () => {
+    if (!tour) return
+    if (tour.i + 1 < tour.steps.length) setTour({ ...tour, i: tour.i + 1 })
+    else endTour()
+  }
+  const prevStep = () => { if (tour && tour.i > 0) setTour({ ...tour, i: tour.i - 1 }) }
+
+  // Start the tour once, shortly after a first-time user lands in the app.
+  useEffect(() => {
+    if (!enabled || tour) return undefined
+    if (!location.pathname.startsWith('/app')) return undefined
+    if (ls.get(tourKey) === '1') return undefined
+    const t = setTimeout(() => {
+      const steps = TOUR_STEPS.filter((s) => visibleEl(s.sel))
+      if (!steps.length) return
+      setOpen(false); setTip(null)
+      setTour({ steps, i: 0 })
+    }, 1400)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, location.pathname])
+
+  // Drive the active step: highlight the target and walk Sam beneath it.
+  useEffect(() => {
+    if (!tour) { setSpot(null); return undefined }
+    const el = visibleEl(tour.steps[tour.i].sel)
+    if (!el) { setSpot(null); return undefined }
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const update = () => setSpot(el.getBoundingClientRect())
+    update()
+    const r = el.getBoundingClientRect()
+    const vw = window.innerWidth || 1000
+    const cx = Math.min(Math.max(r.left + r.width / 2 - 31, 16), vw - 90)
+    setFacing(cx >= mx.get() ? 1 : -1)
+    setMode('walk')
+    animate(my, 0, { duration: 0.4 })
+    const a = animate(mx, cx, { duration: 0.8, ease: 'linear', onComplete: () => setMode('wave') })
+    const settle = setTimeout(update, 450)
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      if (a?.stop) a.stop()
+      clearTimeout(settle)
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tour, location.pathname])
 
   // Login greeting (once per browser session) → then per-page tips.
   useEffect(() => {
-    if (!enabled || open) return undefined
+    if (!enabled || open || tour) return undefined
+    // First-timers get the guided tour instead of the greeting / per-page tips.
+    if (ls.get(tourKey) !== '1') return undefined
     const greetKey = `hse:guide:greeted:${uid}`
     const greeted = (() => { try { return sessionStorage.getItem(greetKey) === '1' } catch { return false } })()
     if (!greeted) {
@@ -276,7 +351,7 @@ export default function Assistant() {
     const seenKey = `hse:guide:tip:${uid}:${guide.title}`
     if (ls.get(seenKey) !== '1') { const t = setTimeout(() => setTip({ title: guide.title, text: guide.tips[0] }), 900); return () => clearTimeout(t) }
     return undefined
-  }, [location.pathname, open, uid, guide, enabled])
+  }, [location.pathname, open, uid, guide, enabled, tour])
 
   const dismissTip = () => {
     if (tip && !tip.greeting) ls.set(`hse:guide:tip:${uid}:${guide.title}`, '1')
@@ -338,28 +413,42 @@ export default function Assistant() {
   }
 
   const shownMode = asking ? 'think' : open ? 'wave' : asleep ? 'sleep' : mode
+  // Lightweight 2D Sam — used directly, and as the fallback for the 3D avatar
+  // (e.g. when no rigged .glb model is present, so we never start a WebGL canvas).
+  const svgSam = <div style={{ transform: `scaleX(${facing})` }}><Character mode={shownMode} reduced={reduced} /></div>
+
+  // Tour callout placement: beside the highlighted element, clamped to the viewport.
+  const tourStep = tour ? tour.steps[tour.i] : null
+  let cLeft = 20, cTop = 20
+  if (spot) {
+    const vw = window.innerWidth || 1000, vh = window.innerHeight || 800, W = 288
+    cLeft = spot.right + 16
+    if (cLeft + W > vw - 12) cLeft = spot.left - W - 16
+    if (cLeft < 12) cLeft = Math.min(Math.max(12, spot.left), Math.max(12, vw - W - 12))
+    cTop = Math.min(Math.max(12, spot.top), Math.max(12, vh - 230))
+  }
 
   return (
     <div className="no-print">
       {/* Draggable walking character */}
       <motion.div
-        className="fixed bottom-1 left-0 z-40 cursor-grab active:cursor-grabbing"
+        className={`fixed bottom-1 left-0 ${tour ? 'z-[58]' : 'z-40'} cursor-grab active:cursor-grabbing`}
         style={{ x: mx, y: my }}
-        drag
+        drag={!tour}
         dragMomentum={false}
         dragElastic={0.04}
         onDragStart={() => { setMode('idle'); lastRef.current = Date.now(); setAsleep(false) }}
         onDragEnd={onDragEnd}
       >
-        <button onClick={() => (open ? setOpen(false) : openPanel())} className="relative block" aria-label="Open Sam, the HSE Guide">
+        <button data-tour="sam" onClick={() => (tour ? nextStep() : open ? setOpen(false) : openPanel())} className="relative block" aria-label="Open Sam, the HSE Guide">
           {reduced ? (
             <div style={{ transform: `scaleX(${facing})` }}>
               <Character mode={shownMode} reduced />
             </div>
           ) : (
-            <AvatarBoundary fallback={<div style={{ transform: `scaleX(${facing})` }}><Character mode={shownMode} reduced={reduced} /></div>}>
-              <Suspense fallback={<div style={{ transform: `scaleX(${facing})` }}><Character mode={shownMode} reduced={reduced} /></div>}>
-                <Character3D mode={shownMode} size={68} facing={facing} />
+            <AvatarBoundary fallback={svgSam}>
+              <Suspense fallback={svgSam}>
+                <Character3D mode={shownMode} size={68} facing={facing} fallback={svgSam} />
               </Suspense>
             </AvatarBoundary>
           )}
@@ -368,6 +457,47 @@ export default function Assistant() {
           )}
         </button>
       </motion.div>
+
+      {/* First-run guided tour: spotlight + walking callout */}
+      <AnimatePresence>
+        {tourStep && spot && (
+          <>
+            <motion.div
+              key="tour-spot"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="pointer-events-none fixed z-[55]"
+              style={{
+                left: spot.left - 6, top: spot.top - 6, width: spot.width + 12, height: spot.height + 12,
+                borderRadius: 14, boxShadow: '0 0 0 9999px rgba(2,6,23,0.55)', outline: '2px solid #22c55e',
+              }}
+            />
+            <motion.div
+              key="tour-callout"
+              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.96, transition: { duration: 0.12 } }}
+              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+              className="fixed z-[60] w-72 rounded-2xl border border-clay-200 bg-clay-surface p-4 shadow-card"
+              style={{ left: cLeft, top: cTop }}
+            >
+              <button onClick={endTour} className="absolute right-2 top-2 rounded-lg p-1 text-ink-400 hover:bg-clay-100"><X size={14} /></button>
+              <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-600"><Sparkles size={12} /> Sam’s tour</p>
+              <p className="mt-1 pr-4 text-sm font-bold text-ink-900">{tourStep.title}</p>
+              <p className="mt-1 text-xs leading-relaxed text-ink-600">{tourStep.text}</p>
+              <div className="mt-3 flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-ink-400">{tour.i + 1} / {tour.steps.length}</span>
+                <div className="flex items-center gap-2">
+                  {tour.i > 0 && <button onClick={prevStep} className="btn-soft px-2.5 py-1.5 text-xs">Back</button>}
+                  <button onClick={endTour} className="text-xs font-semibold text-ink-400 hover:text-ink-700">Skip</button>
+                  <button onClick={nextStep} className="btn-primary px-3 py-1.5 text-xs">{tour.i + 1 === tour.steps.length ? 'Done' : 'Next'}</button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Tip / welcome bubble */}
       <AnimatePresence>

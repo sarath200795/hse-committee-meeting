@@ -108,9 +108,11 @@ function RiggedCanvas({ mode, size, manifest, facing = 1 }) {
 
 // Default export: checks for a manifest once. With a rigged model present it
 // renders the realistic character (procedural figure as the load/error
-// fallback); otherwise it renders the procedural figure directly.
+// fallback); otherwise it renders the supplied lightweight 2D fallback so we
+// never spin up a WebGL context just to draw the procedural figure (which is
+// what triggered "THREE.WebGLRenderer: Context Lost" on this small avatar).
 let MANIFEST // undefined = unchecked, null = none, object = found
-export default function Character3DAuto({ mode = 'idle', size = 68, facing = 1 }) {
+export default function Character3DAuto({ mode = 'idle', size = 68, facing = 1, fallback = null }) {
   const [manifest, setManifest] = useState(MANIFEST)
 
   useEffect(() => {
@@ -127,14 +129,17 @@ export default function Character3DAuto({ mode = 'idle', size = 68, facing = 1 }
     return () => { alive = false }
   }, [])
 
+  // No rigged .glb model present → use the lightweight 2D fallback (no WebGL).
+  const loadFallback = fallback ?? <Character3D mode={mode} size={size} facing={facing} />
+
   if (manifest && manifest.model) {
     return (
-      <RiggedBoundary fallback={<Character3D mode={mode} size={size} facing={facing} />}>
-        <Suspense fallback={<Character3D mode={mode} size={size} facing={facing} />}>
+      <RiggedBoundary fallback={loadFallback}>
+        <Suspense fallback={loadFallback}>
           <RiggedCanvas mode={mode} size={size} manifest={manifest} facing={facing} />
         </Suspense>
       </RiggedBoundary>
     )
   }
-  return <Character3D mode={mode} size={size} facing={facing} />
+  return loadFallback
 }
