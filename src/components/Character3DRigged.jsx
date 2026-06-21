@@ -129,17 +129,24 @@ export default function Character3DAuto({ mode = 'idle', size = 68, facing = 1, 
     return () => { alive = false }
   }, [])
 
-  // No rigged .glb model present → use the lightweight 2D fallback (no WebGL).
-  const loadFallback = fallback ?? <Character3D mode={mode} size={size} facing={facing} />
+  // No rigged .glb model present → render the procedural 3D figure (box-Sam).
+  // It self-guards against WebGL being unavailable / "Context Lost" and degrades
+  // to the supplied lightweight 2D `fallback` when needed; the boundary catches
+  // any hard error in the 3D path too.
+  const procedural3D = (
+    <RiggedBoundary fallback={fallback}>
+      <Character3D mode={mode} size={size} facing={facing} fallback={fallback} />
+    </RiggedBoundary>
+  )
 
   if (manifest && manifest.model) {
     return (
-      <RiggedBoundary fallback={loadFallback}>
-        <Suspense fallback={loadFallback}>
+      <RiggedBoundary fallback={procedural3D}>
+        <Suspense fallback={procedural3D}>
           <RiggedCanvas mode={mode} size={size} manifest={manifest} facing={facing} />
         </Suspense>
       </RiggedBoundary>
     )
   }
-  return loadFallback
+  return procedural3D
 }
