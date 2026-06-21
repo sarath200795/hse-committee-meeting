@@ -25,15 +25,17 @@ const ls = {
 const loop = (d) => ({ duration: d, repeat: Infinity, ease: 'easeInOut' })
 const IDLE_SLEEP_MS = 3 * 60 * 1000
 
-// First-run guided tour — Sam walks to each anchor and explains it. Steps whose
-// target isn't on screen (wrong breakpoint, non-admin, etc.) are skipped.
+// First-run guided tour — Sam walks the user through the app, navigating to each
+// page in turn and explaining it. Steps with `admin` are skipped for non-admins;
+// steps whose anchor isn't on screen (e.g. mobile) still navigate and show a
+// centred callout. `to` is the route Sam opens for that step.
 const TOUR_STEPS = [
-  { sel: '[data-tour="menu"]', title: 'Navigation menu', text: 'Tap here to open the menu and move between sections.' },
-  { sel: '[data-tour="nav-dashboard"]', title: 'Your dashboard', text: 'Get an at-a-glance overview of meetings, actions and compliance.' },
-  { sel: '[data-tour="nav-calendar"]', title: 'Calendar', text: 'Browse and plan your meetings by date.' },
-  { sel: '[data-tour="nav-new"]', title: 'Log a meeting', text: 'Record a new HSE committee or consultation meeting here.' },
-  { sel: '[data-tour="nav-users"]', title: 'Team & approvals', text: 'Admins approve teammates and manage roles here.' },
-  { sel: '[data-tour="nav-sites"]', title: 'Facility sites', text: 'Manage the sites your meetings belong to.' },
+  { sel: '[data-tour="menu"]', title: 'Navigation menu', text: 'On smaller screens, tap here to open the menu and move between sections.' },
+  { to: '/app/meetings?view=dashboard', sel: '[data-tour="nav-dashboard"]', title: 'Your dashboard', text: 'Your at-a-glance overview of meetings, open actions and compliance.' },
+  { to: '/app/meetings?view=calendar', sel: '[data-tour="nav-calendar"]', title: 'Calendar', text: 'Browse and plan your committee meetings by date.' },
+  { to: '/app/meetings?view=new', sel: '[data-tour="nav-new"]', title: 'Log a meeting', text: 'Record a new HSE committee or consultation meeting — attendees, topics and actions.' },
+  { to: '/app/users', sel: '[data-tour="nav-users"]', title: 'Team & approvals', text: 'Admins approve teammates and manage roles here.', admin: true },
+  { to: '/app/sites', sel: '[data-tour="nav-sites"]', title: 'Facility sites', text: 'Manage the facility sites your meetings belong to.', admin: true },
   { sel: '[data-tour="sam"]', title: 'That’s me — Sam!', text: 'Tap me anytime for tips or to ask about your data. You can drag me anywhere, too.' },
 ]
 
@@ -181,7 +183,7 @@ function Bubble({ from, children }) {
 export default function Assistant() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { user, orgId } = useAuth()
+  const { user, orgId, isAdmin } = useAuth()
   const reduced = useReducedMotion()
   const uid = user?.uid || 'anon'
 
@@ -278,6 +280,12 @@ export default function Assistant() {
 
   // ── First-run guided tour ───────────────────────────────────────────────────
   const visibleEl = (sel) => Array.from(document.querySelectorAll(sel)).find((el) => el.offsetParent !== null) || null
+  // Steps to run: drop admin-only pages for non-admins; navigable steps (`to`)
+  // are always included, others only when their anchor is currently on screen.
+  const buildTourSteps = () => TOUR_STEPS.filter((s) => {
+    if (s.admin && !isAdmin) return false
+    return s.to ? true : !!visibleEl(s.sel)
+  })
 
   const endTour = () => {
     ls.set(tourKey, '1')
@@ -294,7 +302,7 @@ export default function Assistant() {
   // Replay the guided tour on demand (from Sam's panel). Starts immediately with
   // whatever anchors are currently on screen, independent of the first-run flag.
   const replayTour = () => {
-    const steps = TOUR_STEPS.filter((s) => visibleEl(s.sel))
+    const steps = buildTourSteps()
     if (!steps.length) return
     setOpen(false); setTip(null); setAsleep(false); lastRef.current = Date.now()
     setTour({ steps, i: 0 })
@@ -306,7 +314,7 @@ export default function Assistant() {
     if (!location.pathname.startsWith('/app')) return undefined
     if (ls.get(tourKey) === '1') return undefined
     const t = setTimeout(() => {
-      const steps = TOUR_STEPS.filter((s) => visibleEl(s.sel))
+      const steps = buildTourSteps()
       if (!steps.length) return
       setOpen(false); setTip(null)
       setTour({ steps, i: 0 })
@@ -315,32 +323,52 @@ export default function Assistant() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, location.pathname])
 
-  // Drive the active step: highlight the target and walk Sam beneath it.
+  // Drive the active step: navigate to its page, then highlight the anchor and
+  // walk Sam beneath it (or centre the callout when the anchor isn't on screen).
   useEffect(() => {
     if (!tour) { setSpot(null); return undefined }
-    const el = visibleEl(tour.steps[tour.i].sel)
-    if (!el) { setSpot(null); return undefined }
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    const update = () => setSpot(el.getBoundingClientRect())
-    update()
-    const r = el.getBoundingClientRect()
-    const vw = window.innerWidth || 1000
-    const cx = Math.min(Math.max(r.left + r.width / 2 - 31, 16), vw - 90)
-    setFacing(cx >= mx.get() ? 1 : -1)
-    setMode('walk')
-    animate(my, 0, { duration: 0.4 })
-    const a = animate(mx, cx, { duration: 0.8, ease: 'linear', onComplete: () => setMode('wave') })
-    const settle = setTimeout(update, 450)
+    const step = tour.steps[tour.i]
+    const here = location.pathname + location.search
+    // Open the step's page first; the effect re-runs once the route updates.
+    if (step.to && step.to !== here) { navigate(step.to); return undefined }
+
+    let cancelled = false
+    let a
+    const walkTo = (cx) => {
+      setFacing(cx >= mx.get() ? 1 : -1)
+      setMode('walk')
+      animate(my, 0, { duration: 0.4 })
+      a = animate(mx, cx, { duration: 0.8, ease: 'linear', onComplete: () => setMode('wave') })
+    }
+    const place = () => {
+      if (cancelled) return
+      const vw = window.innerWidth || 1000
+      const el = step.sel ? visibleEl(step.sel) : null
+      if (el) {
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        setSpot(el.getBoundingClientRect())
+        const r = el.getBoundingClientRect()
+        walkTo(Math.min(Math.max(r.left + r.width / 2 - 31, 16), vw - 90))
+      } else {
+        // No anchor on this page/breakpoint — explain it with a centred callout.
+        setSpot(null)
+        walkTo(Math.max(16, Math.round(vw / 2 - 31)))
+      }
+    }
+    const update = () => { const el = step.sel ? visibleEl(step.sel) : null; if (el) setSpot(el.getBoundingClientRect()) }
+    // Small delay lets the freshly-navigated page settle before we measure.
+    const settle = setTimeout(place, step.to ? 320 : 120)
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
     return () => {
+      cancelled = true
       if (a?.stop) a.stop()
       clearTimeout(settle)
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tour, location.pathname])
+  }, [tour, location.pathname, location.search])
 
   // Login greeting (once per browser session) → then per-page tips.
   useEffect(() => {
@@ -435,6 +463,10 @@ export default function Assistant() {
     if (cLeft + W > vw - 12) cLeft = spot.left - W - 16
     if (cLeft < 12) cLeft = Math.min(Math.max(12, spot.left), Math.max(12, vw - W - 12))
     cTop = Math.min(Math.max(12, spot.top), Math.max(12, vh - 230))
+  } else if (tourStep) {
+    const vw = window.innerWidth || 1000, W = 288
+    cLeft = Math.max(12, Math.round(vw / 2 - W / 2))
+    cTop = 88
   }
 
   return (
@@ -469,19 +501,30 @@ export default function Assistant() {
 
       {/* First-run guided tour: spotlight + walking callout */}
       <AnimatePresence>
-        {tourStep && spot && (
+        {tourStep && (
           <>
-            <motion.div
-              key="tour-spot"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="pointer-events-none fixed z-[55]"
-              style={{
-                left: spot.left - 6, top: spot.top - 6, width: spot.width + 12, height: spot.height + 12,
-                borderRadius: 14, boxShadow: '0 0 0 9999px rgba(2,6,23,0.55)', outline: '2px solid #22c55e',
-              }}
-            />
+            {spot ? (
+              <motion.div
+                key="tour-spot"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="pointer-events-none fixed z-[55]"
+                style={{
+                  left: spot.left - 6, top: spot.top - 6, width: spot.width + 12, height: spot.height + 12,
+                  borderRadius: 14, boxShadow: '0 0 0 9999px rgba(2,6,23,0.55)', outline: '2px solid #22c55e',
+                }}
+              />
+            ) : (
+              <motion.div
+                key="tour-dim"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="pointer-events-none fixed inset-0 z-[55]"
+                style={{ background: 'rgba(2,6,23,0.45)' }}
+              />
+            )}
             <motion.div
               key="tour-callout"
               initial={{ opacity: 0, y: 8, scale: 0.96 }}
