@@ -20,12 +20,13 @@ import Assistant from './Assistant'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { IDLE_MS, WARN_MS, formatMMSS } from '../lib/session'
 
-function NavItem({ to, icon: Icon, label, onClick }) {
+function NavItem({ to, icon: Icon, label, onClick, tourId }) {
   return (
     <NavLink
       to={to}
       end
       onClick={onClick}
+      data-tour={tourId}
       className={({ isActive }) =>
         `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${
           isActive ? 'text-white' : 'text-ink-300 hover:bg-white/10 hover:text-white'
@@ -51,12 +52,13 @@ function NavItem({ to, icon: Icon, label, onClick }) {
 
 // Sidebar links for the meeting views — active state is driven by the ?view= param
 // so the sidebar stays in sync with the in-page Dashboard/Calendar/New Meeting tabs.
-function MeetingNavItem({ viewKey, icon: Icon, label, currentView, onClick }) {
+function MeetingNavItem({ viewKey, icon: Icon, label, currentView, onClick, tourId }) {
   const isActive = currentView === viewKey
   return (
     <Link
       to={`/app/meetings?view=${viewKey}`}
       onClick={onClick}
+      data-tour={tourId}
       className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${
         isActive ? 'text-white' : 'text-ink-300 hover:bg-white/10 hover:text-white'
       }`}
@@ -113,17 +115,17 @@ export default function Layout() {
       <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-widest text-ink-500">
         Meetings
       </p>
-      <MeetingNavItem viewKey="dashboard" icon={LayoutDashboard} label="Dashboard" currentView={currentView} onClick={close} />
-      <MeetingNavItem viewKey="calendar" icon={CalendarDays} label="Calendar" currentView={currentView} onClick={close} />
-      <MeetingNavItem viewKey="new" icon={PlusCircle} label="New Meeting" currentView={currentView} onClick={close} />
+      <MeetingNavItem viewKey="dashboard" icon={LayoutDashboard} label="Dashboard" currentView={currentView} onClick={close} tourId="nav-dashboard" />
+      <MeetingNavItem viewKey="calendar" icon={CalendarDays} label="Calendar" currentView={currentView} onClick={close} tourId="nav-calendar" />
+      <MeetingNavItem viewKey="new" icon={PlusCircle} label="New Meeting" currentView={currentView} onClick={close} tourId="nav-new" />
 
       {isAdmin && (
         <>
           <p className="px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-widest text-ink-500">
             Admin
           </p>
-          <NavItem to="/app/users" icon={UsersIcon} label="Team &amp; Approvals" onClick={close} />
-          <NavItem to="/app/sites" icon={MapPin} label="Facility Sites" onClick={close} />
+          <NavItem to="/app/users" icon={UsersIcon} label="Team &amp; Approvals" onClick={close} tourId="nav-users" />
+          <NavItem to="/app/sites" icon={MapPin} label="Facility Sites" onClick={close} tourId="nav-sites" />
         </>
       )}
 
@@ -185,7 +187,7 @@ export default function Layout() {
       <div className="lg:pl-64">
         {/* Mobile top bar */}
         <header className="sticky top-0 z-20 flex items-center gap-3 bg-clay-bg/80 px-4 py-3 backdrop-blur lg:hidden">
-          <button onClick={() => setMobileOpen(true)} className="rounded-xl p-2 shadow-clay-sm transition hover:bg-clay-100 active:shadow-clay-pressed">
+          <button data-tour="menu" onClick={() => setMobileOpen(true)} className="rounded-xl p-2 shadow-clay-sm transition hover:bg-clay-100 active:shadow-clay-pressed">
             <Menu size={20} />
           </button>
           <span className="flex items-center gap-2 font-extrabold">
