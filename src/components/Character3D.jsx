@@ -1,5 +1,14 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
+
+// Cheap one-time probe: is a WebGL context obtainable at all? Avoids mounting a
+// <Canvas> on devices/contexts where it would immediately fail.
+function webglSupported() {
+  try {
+    const c = document.createElement('canvas')
+    return !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl')))
+  } catch { return false }
+}
 
 // Flat-cartoon "Sam" — a friendly site safety manager: yellow hard hat, white
 // shirt + red tie, dark trousers, holding rolled blueprints. Original art built
@@ -177,9 +186,12 @@ function Rig({ mode = 'idle', facing = 1 }) {
   )
 }
 
-export default function Character3D({ mode = 'idle', size = 68, facing = 1 }) {
+export default function Character3D({ mode = 'idle', size = 68, facing = 1, fallback = null }) {
   const w = size
   const h = Math.round(size * 1.35)
+  const supported = useMemo(webglSupported, [])
+  const [lost, setLost] = useState(false)
+
   // R3F measures its container via a ResizeObserver; mounting inside this small
   // fixed/animated box the first measurement can come back 0, leaving the canvas
   // stuck at the 300×150 default (blank). Nudge a resize so it re-measures.
@@ -190,9 +202,22 @@ export default function Character3D({ mode = 'idle', size = 68, facing = 1 }) {
     const t2 = setTimeout(fire, 300)
     return () => { cancelAnimationFrame(r); clearTimeout(t1); clearTimeout(t2) }
   }, [])
+
+  // Guard: if WebGL can't start, or the GPU drops the context ("Context Lost"),
+  // degrade to the lightweight 2D fallback instead of showing a blank canvas.
+  if (!supported || lost) return fallback
+
   return (
     <div style={{ width: w, height: h, pointerEvents: 'none' }}>
-      <Canvas dpr={[1, 2]} gl={{ alpha: true, antialias: true }} camera={{ position: [0, 0, 6.6], fov: 30 }} style={{ background: 'transparent' }}>
+      <Canvas
+        dpr={[1, 2]}
+        gl={{ alpha: true, antialias: true, powerPreference: 'low-power', failIfMajorPerformanceCaveat: false }}
+        camera={{ position: [0, 0, 6.6], fov: 30 }}
+        style={{ background: 'transparent' }}
+        onCreated={({ gl }) => {
+          gl.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); setLost(true) }, { once: true })
+        }}
+      >
         <ambientLight intensity={0.85} />
         <directionalLight position={[3, 5, 4]} intensity={1.05} />
         <directionalLight position={[-3, 2, -2]} intensity={0.3} />

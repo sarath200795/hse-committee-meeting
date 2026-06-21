@@ -291,6 +291,15 @@ export default function Assistant() {
   }
   const prevStep = () => { if (tour && tour.i > 0) setTour({ ...tour, i: tour.i - 1 }) }
 
+  // Replay the guided tour on demand (from Sam's panel). Starts immediately with
+  // whatever anchors are currently on screen, independent of the first-run flag.
+  const replayTour = () => {
+    const steps = TOUR_STEPS.filter((s) => visibleEl(s.sel))
+    if (!steps.length) return
+    setOpen(false); setTip(null); setAsleep(false); lastRef.current = Date.now()
+    setTour({ steps, i: 0 })
+  }
+
   // Start the tour once, shortly after a first-time user lands in the app.
   useEffect(() => {
     if (!enabled || tour) return undefined
@@ -559,7 +568,10 @@ export default function Assistant() {
               <button onClick={setRoam} className="inline-flex items-center gap-1 hover:text-ink-700" disabled={!pinned}>
                 <Move size={12} /> {pinned ? 'Let Sam roam' : 'Drag Sam to pin him'}
               </button>
-              <button onClick={disableGuide} className="inline-flex items-center gap-1 hover:text-ink-700"><EyeOff size={12} /> Hide guide</button>
+              <div className="flex items-center gap-3">
+                <button onClick={replayTour} className="inline-flex items-center gap-1 hover:text-ink-700"><Sparkles size={12} /> Replay tour</button>
+                <button onClick={disableGuide} className="inline-flex items-center gap-1 hover:text-ink-700"><EyeOff size={12} /> Hide guide</button>
+              </div>
             </div>
           </motion.div>
         )}
